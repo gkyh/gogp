@@ -1,3 +1,3 @@
-module github.com/gkyh/gorp
+module github.com/gkyh/gogp
 
 go 1.13
