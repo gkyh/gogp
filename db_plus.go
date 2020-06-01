@@ -38,7 +38,13 @@ func (m *DbMap) Model(class interface{}) *gorpDB {
 	return db
 
 }
+func (m *DbMap) Table(name string) *gorpDB {
+	
+	db := &gorpDB{dbmap: m, parent: nil, tx: nil, Query: "", table: "", Condition: nil, field: "*", Cmd: "", Offset: 0, Limit: 0, sort: ""}
 
+	db.table = name
+	return db
+}
 func (m *DbMap) Where(query string, values ...interface{}) *gorpDB {
 
 	db := &gorpDB{dbmap: m, parent: nil, tx: nil, Query: "", table: "", Condition: nil, field: "*", Cmd: "", Offset: 0, Limit: 0, sort: ""}
