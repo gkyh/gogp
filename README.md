@@ -315,7 +315,14 @@ dbmap.Where("sex=?", "M").Maps(m).Find(&v)
 or  
 dbmap.Where("sex=?", "M").Where("city=?", "new york").Find(&v)  
 ```
+###IN
+```go
 
+dbmap.Where("name IN(?)",[]string{"john","Jacob"}).Find(&v)   
+
+//select * from person where name in ("john","Jacob")  
+
+```
 ###Page 
 
 ```go
