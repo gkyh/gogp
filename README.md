@@ -291,6 +291,43 @@ obj, err := dbmap.Get(Invoice{}, 99)
 inv := obj.(*Invoice)
 ```
 
+####FindById
+err:= dbmap.FindById(Invoice{}, 99)  
+
+### Where
+
+dbmap.Where("name= ? and sex=?", "john","M").Get(&Person{})
+
+// select * from person where name = 'john' and sex= 'M'
+
+var v []person
+dbmap.Where("sex=?","M").Find(&v)
+
+// select * from person where sex= 'M'
+
+var m map[string]interface
+
+m["city"] = "new york"
+dbmap.Where("sex=?", "M").Maps(m).Find(&v)
+//select * from person where sex= 'M' and city = 'new york'
+
+or
+dbmap.Where("sex=?", "M").Where("city=?", "new york").Find(&v)
+
+###Update && Delete
+
+p:= &person{}
+dbmap.Model(p).Where("name=?","john").Update("age",24)
+
+//update person set age =24 where name = "john"
+
+dbmap.Model(p).Where("name=?","john").Delete(p)
+or
+dbmap.Where("name=?","john").Delete(p)
+or
+dbmap.Model(p).Delete(p)
+
+
 ### Ad Hoc SQL
 
 #### SELECT
