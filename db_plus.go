@@ -29,17 +29,51 @@ func (m *DbMap) SetPrefix(s string) {
 	prefix = s
 }
 
+func getName(class interface{}) string {
+
+	t := reflect.TypeOf(class)
+	str := fmt.Sprintf("%v", t)
+
+	buff := bytes.NewBuffer([]byte{})
+
+	for pos, char := range str {
+		if str[pos] != '*' && str[pos] != '[' && str[pos] != ']' {
+
+			buff.WriteRune(char)
+		}
+	}
+
+	return buff.String()
+}
+
+func (m *DbMap) GetTableName(class interface{}) string {
+
+	tName := getName(class)
+
+	fmt.Println(tName)
+	for i := range m.tables {
+		table := m.tables[i]
+
+		tb := fmt.Sprintf("%v", table.gotype)
+		if tb == tName {
+
+			return table.TableName
+		}
+	}
+	return getTable(class)
+}
+
 //ad dbMap new month
 func (m *DbMap) Model(class interface{}) *gorpDB {
 
 	db := &gorpDB{dbmap: m, parent: nil, tx: nil, Query: "", table: "", Condition: nil, field: "*", Cmd: "", Offset: 0, Limit: 0, sort: ""}
 
-	db.table = db.GetTable(class)
+	db.table = m.GetTableName(class)
 	return db
 
 }
 func (m *DbMap) Table(name string) *gorpDB {
-	
+
 	db := &gorpDB{dbmap: m, parent: nil, tx: nil, Query: "", table: "", Condition: nil, field: "*", Cmd: "", Offset: 0, Limit: 0, sort: ""}
 
 	db.table = name
@@ -81,7 +115,7 @@ func m_type(i interface{}) string {
 	}
 
 }
-func (s *gorpDB) GetTable(class interface{}) string {
+func getTable(class interface{}) string {
 
 	var table string
 	ts := reflect.TypeOf(class)
@@ -173,7 +207,7 @@ func (db *gorpDB) Update(field string, values ...interface{}) error {
 func (db *gorpDB) Delete(class interface{}) error {
 
 	if db.table == "" {
-		db.table = db.GetTable(class)
+		db.table = db.dbmap.GetTableName(class)
 	}
 	sql := bytes.Buffer{}
 
@@ -306,7 +340,7 @@ func (db *gorpDB) Count(class interface{}) int32 {
 
 	if db.table == "" {
 
-		db.table = db.GetTable(class)
+		db.table = db.dbmap.GetTableName(class)
 	}
 
 	sql := bytes.Buffer{}
@@ -346,7 +380,7 @@ func (db *gorpDB) Find(out interface{}) *gorpDB {
 
 	if db.table == "" {
 
-		db.table = db.GetTable(out)
+		db.table = db.dbmap.GetTableName(out)
 	}
 
 	sql := bytes.Buffer{}
@@ -395,7 +429,7 @@ func (db *gorpDB) FindById(out, id interface{}) error {
 
 	if db.table == "" {
 
-		db.table = db.GetTable(out)
+		db.table = db.dbmap.GetTableName(out)
 	}
 
 	sql := bytes.Buffer{}
@@ -411,7 +445,7 @@ func (db *gorpDB) Get(out interface{}) error {
 
 	if db.table == "" {
 
-		db.table = db.GetTable(out)
+		db.table = db.dbmap.GetTableName(out)
 	}
 
 	sql := bytes.Buffer{}
