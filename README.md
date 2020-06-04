@@ -291,6 +291,86 @@ obj, err := dbmap.Get(Invoice{}, 99)
 inv := obj.(*Invoice)
 ```
 
+####FindById
+```go
+err:= dbmap.FindById(Invoice{}, 99)  
+```
+
+### Where
+```go
+dbmap.Where("name= ? and sex=?", "john","M").Get(&Person{})
+
+// select * from person where name = 'john' and sex= 'M'  
+
+var v []person
+dbmap.Where("sex=?","M").Find(&v)
+
+// select * from person where sex= 'M'
+
+var m map[string]interface
+
+m["city"] = "new york"
+dbmap.Where("sex=?", "M").Maps(m).Find(&v)
+//select * from person where sex= 'M' and city = 'new york'  
+or  
+dbmap.Where("sex=?", "M").Where("city=?", "new york").Find(&v)  
+```
+###IN
+```go
+
+dbmap.Where("name IN(?)",[]string{"john","Jacob"}).Find(&v)   
+
+//select * from person where name in ("john","Jacob")  
+
+```
+###Page 
+
+```go
+
+func List(maps map[string]interface{}, startDate, endDate string, currentPage, pageSize, totalPage int32) (v []Person, page int32) {
+
+	db := dbmap.Model(&v).Maps(maps)
+	if startDate != "" {
+		db.Where("create_time>=?", startDate)
+	}
+	if endDate != "" {
+		db.Where("create_time<=?", endDate)
+	}
+
+	if totalPage == 0 {
+		page = db.Count(&v)
+	}
+
+	if page <= 0 {
+		return nil, -1
+	}
+
+	db.Page(currentPage, pageSize).Sort("id", "desc").Find(&v)
+	return
+}
+
+//Page(currentPage, pageSize)
+start = (currentPage-1)*pageSize
+count = pageSize
+=>limit start , count 
+
+//.Sort("id", "desc").
+=> order by id desc
+```
+###Update && Delete  
+```go
+p:= &person{}  
+dbmap.Model(p).Where("name=?","john").Update("age",24)
+
+//update person set age =24 where name = "john"
+
+dbmap.Model(p).Where("name=?","john").Delete(p)  
+or  
+dbmap.Where("name=?","john").Delete(p)  
+or  
+dbmap.Model(p).Delete(p)
+
+```
 ### Ad Hoc SQL
 
 #### SELECT
