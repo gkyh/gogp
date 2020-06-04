@@ -95,9 +95,16 @@ func (m *DbMap) Tx(tx *Transaction) *gorpDB {
 
 func (m *DbMap) FindById(out, id interface{}) error {
 
-	_, err := m.Get(out, id)
-	return err
+	table := m.GetTableName(out)
+
+	sql := bytes.Buffer{}
+	sql.WriteString("SELECT *  FROM ")
+	sql.WriteString(table)
+	sql.WriteString(" WHERE id=?")
+
+	return m.SelectOne(out, sql.String(), id)
 }
+
 func m_type(i interface{}) string {
 	switch i.(type) {
 	case string:
