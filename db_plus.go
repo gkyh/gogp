@@ -2,6 +2,8 @@ package gorp
 
 import (
 	"bytes"
+	"database/sql"
+	"errors"
 	"fmt"
 	"reflect"
 	"strings"
@@ -10,18 +12,21 @@ import (
 var prefix string = "tb_"
 
 type gorpDB struct {
-	dbmap     *DbMap
-	parent    *gorpDB
-	tx        *Transaction
-	Query     string
-	Condition []map[string]interface{}
-	table     string
-	Cmd       string
-	field     string
-	Offset    int32
-	Limit     int32
-	sort      string
-	Err       error
+	dbmap       *DbMap
+	parent      *gorpDB
+	tx          *Transaction
+	Query       string
+	inCondition string
+	params      []interface{}
+	Condition   []map[string]interface{}
+	OrCondition []map[string]interface{}
+	table       string
+	field       string
+	Offset      int32
+	Limit       int32
+	sort        string
+	group       string
+	Err         error
 }
 
 func (m *DbMap) SetPrefix(s string) {
@@ -49,8 +54,6 @@ func getName(class interface{}) string {
 func (m *DbMap) GetTableName(class interface{}) string {
 
 	tName := getName(class)
-
-	fmt.Println(tName)
 	for i := range m.tables {
 		table := m.tables[i]
 
@@ -66,7 +69,7 @@ func (m *DbMap) GetTableName(class interface{}) string {
 //ad dbMap new month
 func (m *DbMap) Model(class interface{}) *gorpDB {
 
-	db := &gorpDB{dbmap: m, parent: nil, tx: nil, Query: "", table: "", Condition: nil, field: "*", Cmd: "", Offset: 0, Limit: 0, sort: ""}
+	db := &gorpDB{dbmap: m, parent: nil, tx: nil, Query: "", table: "", Condition: nil, field: "*", Offset: 0, Limit: 0, sort: "", group: ""}
 
 	db.table = m.GetTableName(class)
 	return db
@@ -74,21 +77,21 @@ func (m *DbMap) Model(class interface{}) *gorpDB {
 }
 func (m *DbMap) Table(name string) *gorpDB {
 
-	db := &gorpDB{dbmap: m, parent: nil, tx: nil, Query: "", table: "", Condition: nil, field: "*", Cmd: "", Offset: 0, Limit: 0, sort: ""}
+	db := &gorpDB{dbmap: m, parent: nil, tx: nil, Query: "", table: "", Condition: nil, field: "*", Offset: 0, Limit: 0, sort: "", group: ""}
 
 	db.table = name
 	return db
 }
 func (m *DbMap) Where(query string, values ...interface{}) *gorpDB {
 
-	db := &gorpDB{dbmap: m, parent: nil, tx: nil, Query: "", table: "", Condition: nil, field: "*", Cmd: "", Offset: 0, Limit: 0, sort: ""}
+	db := &gorpDB{dbmap: m, parent: nil, tx: nil, Query: "", table: "", Condition: nil, field: "*", Offset: 0, Limit: 0, sort: "", group: ""}
 
 	db.Condition = append(db.Condition, map[string]interface{}{"query": query, "args": values})
 	return db
 }
 func (m *DbMap) Tx(tx *Transaction) *gorpDB {
 
-	db := &gorpDB{dbmap: m, parent: nil, tx: nil, Query: "", table: "", Condition: nil, field: "*", Cmd: "", Offset: 0, Limit: 0, sort: ""}
+	db := &gorpDB{dbmap: m, parent: nil, tx: nil, Query: "", table: "", Condition: nil, field: "*", Offset: 0, Limit: 0, sort: "", group: ""}
 	db.tx = tx
 	return db
 }
@@ -117,6 +120,8 @@ func m_type(i interface{}) string {
 		return "number"
 	case float64:
 		return "number"
+	case []string:
+		return "strings"
 	default:
 		return ""
 	}
@@ -147,13 +152,6 @@ func (db *gorpDB) Select(args string) *gorpDB {
 	return db
 }
 
-/*
-func (db *gorpDB) Model(class interface{}) *gorpDB {
-
-	db.table = db.GetTable(class)
-	return db
-
-}*/
 func (db *gorpDB) Tx(tx *Transaction) *gorpDB {
 
 	db.tx = tx
@@ -168,26 +166,7 @@ func (db *gorpDB) Update(field string, values ...interface{}) error {
 	sql.WriteString(" set ")
 	sql.WriteString(field)
 
-	if db.Query != "" {
-
-		sql.WriteString(" WHERE ")
-		sql.WriteString(db.Query)
-
-	}
-
-	if len(db.Condition) > 0 {
-
-		if db.Query != "" {
-
-			sql.WriteString(" AND ")
-		} else {
-
-			sql.WriteString(" WHERE ")
-		}
-
-		sql.WriteString(buildCondition(db.Condition))
-
-	}
+	sql.WriteString(db.BuildSql())
 
 	if db.tx == nil {
 		_, db.Err = db.dbmap.Exec(sql.String(), values...)
@@ -221,26 +200,8 @@ func (db *gorpDB) Delete(class interface{}) error {
 	sql.WriteString("DELETE  FROM ")
 	sql.WriteString(db.table)
 
-	if db.Query != "" {
+	sql.WriteString(db.BuildSql())
 
-		sql.WriteString(" WHERE ")
-		sql.WriteString(db.Query)
-
-	}
-
-	if len(db.Condition) > 0 {
-
-		if db.Query != "" {
-
-			sql.WriteString(" AND ")
-		} else {
-
-			sql.WriteString(" WHERE ")
-		}
-
-		sql.WriteString(buildCondition(db.Condition))
-
-	}
 	if db.tx == nil {
 
 		_, db.Err = db.dbmap.Exec(sql.String())
@@ -291,6 +252,126 @@ func (db *gorpDB) Where(query string, values ...interface{}) *gorpDB {
 	db.Condition = append(db.Condition, map[string]interface{}{"query": query, "args": values})
 	return db
 }
+func (db *gorpDB) Or(query string, values ...interface{}) *gorpDB {
+
+	db.OrCondition = append(db.OrCondition, map[string]interface{}{"query": query, "args": values})
+	return db
+}
+
+func (db *gorpDB) IN(key string, value string) *gorpDB {
+
+	in := key + " IN (" + value + ") "
+	if db.Query != "" {
+
+		db.Query = " AND " + in
+	} else {
+
+		db.Query = in
+	}
+	return db
+}
+
+func (db *gorpDB) GroupBy(value string) *gorpDB {
+
+	db.group = " group by " + value
+	return db
+}
+func (db *gorpDB) buildSql() string {
+
+	sql := bytes.Buffer{}
+
+	if len(db.Condition) > 0 {
+
+		sql.WriteString(" WHERE ")
+
+		i := 0
+		for _, clause := range db.Condition {
+
+			query := clause["query"].(string)
+			values := clause["args"].([]interface{})
+			if i > 0 {
+				sql.WriteString(" AND ")
+			}
+
+			sql.WriteString(query)
+
+			for _, vv := range values {
+
+				db.params = append(db.params, vv)
+			}
+			i++
+		}
+
+	}
+	if len(db.OrCondition) > 0 {
+
+		sql.WriteString(" OR ")
+
+		i := 0
+
+		for _, clause := range db.OrCondition {
+
+			query := clause["query"].(string)
+			values := clause["args"].([]interface{})
+			if i > 0 {
+				sql.WriteString(" OR ")
+			}
+
+			sql.WriteString(query)
+
+			for _, vv := range values {
+
+				db.params = append(db.params, vv)
+			}
+			i++
+		}
+
+	}
+	if db.inCondition != "" {
+
+		if len(db.Condition) > 0 {
+
+			sql.WriteString(" AND ")
+		} else {
+			sql.WriteString("  ")
+		}
+		sql.WriteString(db.inCondition)
+
+	}
+	return sql.String()
+}
+func (db *gorpDB) BuildSql() string {
+
+	sql := bytes.Buffer{}
+	if db.Query != "" {
+
+		sql.WriteString(" WHERE ")
+		sql.WriteString(db.Query)
+
+	}
+
+	if len(db.Condition) > 0 {
+
+		if db.Query != "" {
+
+			sql.WriteString(" AND ")
+		} else {
+
+			sql.WriteString(" WHERE ")
+		}
+
+		sql.WriteString(buildCondition(db.Condition))
+
+	}
+	if len(db.OrCondition) > 0 {
+
+		sql.WriteString(" OR ")
+
+		sql.WriteString(buildOrCondition(db.Condition))
+
+	}
+	return sql.String()
+}
 func buildCondition(w []map[string]interface{}) string {
 
 	buff := bytes.NewBuffer([]byte{})
@@ -310,6 +391,27 @@ func buildCondition(w []map[string]interface{}) string {
 	}
 	return buff.String()
 }
+
+func buildOrCondition(w []map[string]interface{}) string {
+
+	buff := bytes.NewBuffer([]byte{})
+	i := 0
+
+	for _, clause := range w {
+		if sql := buildSelectQuery(clause); sql != "" {
+
+			fmt.Println(sql)
+			if i > 0 {
+				buff.WriteString(" Or ")
+			}
+			buff.WriteString(sql)
+			i++
+		}
+
+	}
+	return buff.String()
+}
+
 func buildSelectQuery(clause map[string]interface{}) (str string) {
 	switch value := clause["query"].(type) {
 	case string:
@@ -343,11 +445,13 @@ func buildSelectQuery(clause map[string]interface{}) (str string) {
 	return
 }
 
-func (db *gorpDB) Count(class interface{}) int32 {
+func (db *gorpDB) Count(agrs ...interface{}) int32 {
 
 	if db.table == "" {
-
-		db.table = db.dbmap.GetTableName(class)
+		if len(agrs) == 0 {
+			return 0
+		}
+		db.table = db.dbmap.GetTableName(agrs[0])
 	}
 
 	sql := bytes.Buffer{}
@@ -356,25 +460,11 @@ func (db *gorpDB) Count(class interface{}) int32 {
 	sql.WriteString(") FROM ")
 	sql.WriteString(db.table)
 
-	if db.Query != "" {
+	sql.WriteString(db.BuildSql())
 
-		sql.WriteString(" WHERE ")
-		sql.WriteString(db.Query)
+	if db.group != "" {
 
-	}
-
-	if len(db.Condition) > 0 {
-
-		if db.Query != "" {
-
-			sql.WriteString(" AND ")
-		} else {
-
-			sql.WriteString(" WHERE ")
-		}
-
-		sql.WriteString(buildCondition(db.Condition))
-
+		sql.WriteString(db.group)
 	}
 
 	var count int64 = 0
@@ -396,27 +486,12 @@ func (db *gorpDB) Find(out interface{}) *gorpDB {
 	sql.WriteString(" FROM ")
 	sql.WriteString(db.table)
 
-	if db.Query != "" {
+	sql.WriteString(db.BuildSql())
 
-		sql.WriteString(" WHERE ")
-		sql.WriteString(db.Query)
+	if db.group != "" {
 
+		sql.WriteString(db.group)
 	}
-
-	if len(db.Condition) > 0 {
-
-		if db.Query != "" {
-
-			sql.WriteString(" AND ")
-		} else {
-
-			sql.WriteString(" WHERE ")
-		}
-
-		sql.WriteString(buildCondition(db.Condition))
-
-	}
-
 	if db.sort != "" {
 
 		sql.WriteString(db.sort)
@@ -431,7 +506,34 @@ func (db *gorpDB) Find(out interface{}) *gorpDB {
 	_, db.Err = db.dbmap.Select(out, sql.String())
 	return db
 }
+func (db *gorpDB) QueryField(field string, out interface{}) error {
 
+	db_sql := bytes.Buffer{}
+	db_sql.WriteString("SELECT ")
+	db_sql.WriteString(field)
+	db_sql.WriteString(" FROM ")
+	db_sql.WriteString(db.table)
+
+	db_sql.WriteString(db.BuildSql())
+
+	rows, err := db.dbmap.Db.Query(db_sql.String())
+	if err != nil {
+
+		//fmt.Errorf("gorp: cannot SELECT into this type: %v", err)
+		return err
+	}
+
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return err
+		}
+		return sql.ErrNoRows
+	}
+
+	defer rows.Close()
+
+	return rows.Scan(out)
+}
 func (db *gorpDB) FindById(out, id interface{}) error {
 
 	if db.table == "" {
@@ -461,26 +563,63 @@ func (db *gorpDB) Get(out interface{}) error {
 	sql.WriteString(" FROM ")
 	sql.WriteString(db.table)
 
-	if db.Query != "" {
+	sql.WriteString(db.BuildSql())
 
-		sql.WriteString(" WHERE ")
-		sql.WriteString(db.Query)
+	if db.group != "" {
 
+		sql.WriteString(db.group)
 	}
 
-	if len(db.Condition) > 0 {
+	return db.dbmap.SelectOne(out, sql.String())
 
-		if db.Query != "" {
+}
 
-			sql.WriteString(" AND ")
-		} else {
+func (db *gorpDB) IsExit() (bool, error) {
 
-			sql.WriteString(" WHERE ")
-		}
-
-		sql.WriteString(buildCondition(db.Condition))
-
+	if db.table == "" {
+		return false, errors.New("no found model")
 	}
+
+	var out int64
+
+	db_sql := bytes.Buffer{}
+	db_sql.WriteString("SELECT 1  FROM ")
+	db_sql.WriteString(db.table)
+
+	db_sql.WriteString(db.buildSql())
+	db_sql.WriteString(" LIMIT 1")
+
+	db.Err = db.dbmap.QueryRow(db_sql.String(), db.params...).Scan(&out)
+
+	if db.Err != nil && db.Err.Error() == "sql: no rows in result set" {
+
+		return false, nil
+	}
+	return out > 0, db.Err
+
+}
+
+func (db *gorpDB) First(out interface{}) error {
+
+	if db.table == "" {
+
+		db.table = db.dbmap.GetTableName(out)
+	}
+
+	sql := bytes.Buffer{}
+	sql.WriteString("SELECT ")
+	sql.WriteString(db.field)
+	sql.WriteString(" FROM ")
+	sql.WriteString(db.table)
+
+	sql.WriteString(db.BuildSql())
+
+	if db.group != "" {
+
+		sql.WriteString(db.group)
+	}
+
+	sql.WriteString(" limit 1")
 
 	return db.dbmap.SelectOne(out, sql.String())
 
