@@ -130,8 +130,7 @@ func m_type(i interface{}) string {
 func getTable(class interface{}) string {
 
 	var table string
-	ts := reflect.TypeOf(class)
-	se := fmt.Sprintf("%v", ts)
+	se := reflect.TypeOf(class).String()
 
 	idx := strings.LastIndex(se, ".")
 	if idx > 0 {
@@ -140,6 +139,7 @@ func getTable(class interface{}) string {
 		ss := string([]rune(se)[idx:len(se)])
 		table = strings.ToLower(ss)
 	} else {
+		
 		table = se
 	}
 
@@ -190,11 +190,18 @@ func (db *gorpDB) Update(field string, values ...interface{}) error {
 
 }
 
-func (db *gorpDB) Delete(class interface{}) error {
+func (db *gorpDB) Delete(class ...interface{}) error {
+	
+	if len(class) > 0 {
+		if db.tx == nil {
 
-	if db.table == "" {
-		db.table = db.dbmap.GetTableName(class)
-	}
+			_, db.Err = db.dbmap.Delete(class)
+		} else {
+			_, db.Err = db.tx.Delete(class)
+		}
+		return db.Err
+	} 
+
 	sql := bytes.Buffer{}
 
 	sql.WriteString("DELETE  FROM ")
@@ -473,6 +480,26 @@ func (db *gorpDB) Count(agrs ...interface{}) int32 {
 	return int32(count)
 
 }
+
+func (db *gorpDB) PageSize(size int32) int32 {
+
+	total := db.Count()
+
+	if total <= 0 {
+
+		return 0
+	}
+	var page int32 = 0
+	if total%size == 0 {
+		page = total / size
+	} else {
+		page = (total + size) / size
+	}
+
+	return page
+
+}
+
 func (db *gorpDB) Find(out interface{}) *gorpDB {
 
 	if db.table == "" {
